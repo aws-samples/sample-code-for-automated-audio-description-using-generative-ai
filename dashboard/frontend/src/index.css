@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 requires design tokens to be registered with @theme for the
+ * matching utility classes (bg-popover, bg-accent, border, etc.) to exist.
+ * The raw values live in :root below; this block exposes them as utilities so
+ * the shadcn/ui primitives (which use bare classes like `bg-popover`) render
+ * with a real background instead of being transparent. `inline` keeps the
+ * utilities pointing at the :root vars rather than copying their values.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root {
+  /* shadcn/ui theme variables */
+  --background: #0b1326;
+  --foreground: #dae2fd;
+  --card: #222a3d;
+  --card-foreground: #dae2fd;
+  --popover: #222a3d;
+  --popover-foreground: #dae2fd;
+  --primary: #00e5ff;
+  --primary-foreground: #0b1326;
+  --secondary: #131b2e;
+  --secondary-foreground: #dae2fd;
+  --muted: #131b2e;
+  --muted-foreground: rgba(218, 226, 253, 0.6);
+  --accent: #131b2e;
+  --accent-foreground: #dae2fd;
+  --destructive: #ffb4ab;
+  --destructive-foreground: #0b1326;
+  --border: rgba(218, 226, 253, 0.12);
+  --input: rgba(218, 226, 253, 0.12);
+  --ring: rgba(0, 229, 255, 0.3);
+  --radius: 0.75rem;
+
+  /* Cinematic Command extended tokens */
+  --surface: #0b1326;
+  --surface-container-lowest: #060e20;
+  --surface-container-low: #131b2e;
+  --surface-container-high: #222a3d;
+  --surface-container-highest: #2d3449;
+  --on-surface: #dae2fd;
+  --on-surface-muted: rgba(218, 226, 253, 0.6);
+  --primary-light: #c3f5ff;
+  --primary-glow: rgba(0, 229, 255, 0.3);
+  --success: #4edea3;
+  --error: #ffb4ab;
+  --success-bg: rgba(78, 222, 163, 0.12);
+  --error-bg: rgba(255, 180, 171, 0.1);
+  --ghost-border: rgba(218, 226, 253, 0.12);
+  --ghost-border-error: rgba(255, 180, 171, 0.2);
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --font-display: "Manrope", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --spacing-card-gap: 1.1rem;
+}
+
+/* Custom animations */
+@keyframes step-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  font-family: var(--font-body);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}

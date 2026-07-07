@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+myvenv/
+
+# Node
+node_modules/
+dist/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Kiro (development artifacts)
+.kiro/
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# CDK
+cdk.out/
+cdk-outputs.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.zip
+
+SESSION-NOTES.md
+scan-report (1).json
+
+# Pip-installed Lambda dependencies (bundled at build/deploy time, not source)
+backend/lambdas/synthesize_audio/bin/
+backend/lambdas/synthesize_audio/mutagen/
+backend/lambdas/synthesize_audio/mutagen-*.dist-info/
+backend/lambdas/synthesize_audio/share/
+backend/lambdas/tests/
+backend/lambdas/tests/
+dashboard/lambdas/calculate_cost/tests/
+sec_scans/
