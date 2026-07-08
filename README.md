@@ -73,7 +73,7 @@ This step is best-effort and safe to re-run. If it can't complete on its own —
 
 ```bash
 git clone <repository-url>
-cd sample-code-for-automated-video-audio-description-using-generative-ai
+cd sample-code-for-automated-audio-description-using-generative-ai
 
 # Deploy everything with one command
 ./deploy.sh
