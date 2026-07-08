@@ -1,4 +1,9 @@
-"""Write a human-readable text summary of DVI processing to S3."""
+"""Generate a human-readable text report of the DVI run and store it in S3.
+
+Renders a formatted .txt report listing each silence segment with its
+timestamps, duration, and generated DVI narration, then writes it to
+summaries/{video_id}-summary-{shortid}.txt for people to read or download.
+"""
 import json
 import uuid
 from datetime import datetime

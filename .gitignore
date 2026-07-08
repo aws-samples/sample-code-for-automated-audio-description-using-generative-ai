@@ -41,9 +41,6 @@ cdk-outputs.json
 SESSION-NOTES.md
 scan-report (1).json
 
-# FFmpeg layer binaries (downloaded at build/deploy time by backend/layers/ffmpeg/build-layer.sh)
-backend/layers/ffmpeg/layer/
-
 # Pip-installed Lambda dependencies (bundled at build/deploy time, not source)
 backend/lambdas/synthesize_audio/bin/
 backend/lambdas/synthesize_audio/mutagen/
@@ -53,3 +50,13 @@ backend/lambdas/tests/
 backend/lambdas/tests/
 dashboard/lambdas/calculate_cost/tests/
 sec_scans/
+
+# draw.io temp / autosave files
+*.crswap
+*.bkp
+*.dtmp
+
+# Local documentation assessments (not part of the published sample)
+*-ASSESSMENT.md
+# FFmpeg layer binaries (downloaded at build/deploy time by backend/layers/ffmpeg/build-layer.sh)
+backend/layers/ffmpeg/layer/

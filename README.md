@@ -4,7 +4,7 @@ A serverless pipeline that automatically generates **Descriptive Video Informati
 
 ## Why DVI Matters
 
-Audio description (also called Descriptive Video Information) is essential for making video content accessible to people who are blind or have low vision. The FCC mandates audio description for major broadcasters in the US, and WCAG 2.1 Success Criterion 1.2.5 recommends it for web content. This sample demonstrates how generative AI can automate the historically expensive and time-consuming process of creating audio descriptions.
+Audio description (also called Descriptive Video Information) is essential for making video content accessible to people who are blind or have low vision. Regulators and standards bodies require or recommend it across regions — for example, the FCC's audio-description rules for major US broadcasters, the CRTC's described-video requirements in Canada, and WCAG 2.1 Success Criterion 1.2.5 for web content. This sample demonstrates how generative AI can automate the historically expensive and time-consuming process of creating audio descriptions.
 
 ## Overview
 
@@ -16,7 +16,7 @@ This sample deploys a complete end-to-end system that:
 4. **Synthesizes speech** from narration text using Amazon Polly
 5. **Mixes narration audio** back into the original video using FFmpeg
 
-It includes a React dashboard for triggering the pipeline, viewing results, and estimating per-execution costs.
+It includes a web dashboard (React + TypeScript) for triggering the pipeline, viewing results, and estimating per-execution costs.
 
 ## Architecture
 
@@ -32,7 +32,7 @@ The system has two parts: a Step Functions processing pipeline that turns a raw 
 
 ### Application UI
 
-This is the web application deployed — the Viewer page plays a processed video alongside its DVI narration segments.
+This is the web dashboard deployed — the Viewer page plays a processed video alongside its DVI narration segments.
 
 ![Screenshot of the DVI dashboard Viewer page: a video player on the left shows a TV sports broadcast, and a paginated list of timestamped DVI narration segments appears on the right, each with a duration and a PASS/FAIL fit badge.](docs/dvi-dashboard-viewer.png)
 
@@ -46,6 +46,7 @@ This is the web application deployed — the Viewer page plays a processed video
 6. **Generate DVI** — Claude generates concise, accessibility-focused narration text from each analysis
 7. **Synthesize** — Amazon Polly converts narration text to speech, constrained to fit within the silence duration
 8. **Mix** — FFmpeg positions each narration audio at the correct timestamp and mixes it into the original video
+9. **Write Summary** — Records a structured per-execution summary (aggregate metrics + per-segment PASS/FAIL fit check) to Amazon DynamoDB, and writes a human-readable text report to Amazon S3
 
 For a deeper, function-by-function explanation of the pipeline and the rationale behind each design choice, see the [backend Lambda guide](backend/LAMBDAS.md).
 
@@ -53,21 +54,18 @@ For a deeper, function-by-function explanation of the pipeline and the rationale
 
 - **AWS Account** with permissions to create Lambda, Step Functions, S3, DynamoDB, API Gateway, CloudFront, and Bedrock resources
 - **AWS CLI** configured with credentials
-- **Node.js 18+** (for React frontend build and CDK)
+- **Node.js 20+** (for React frontend build and CDK; Vite 8 requires Node 20.19 or newer)
 - **Python 3.12+** (for CDK and Lambda functions)
 - **curl** (for downloading the FFmpeg binary)
-- **Amazon Bedrock model access** enabled for:
+- **Amazon Bedrock model access** enabled for (the deploy script attempts to enable these automatically — see [Enabling Bedrock Model Access](#enabling-bedrock-model-access)):
   - Twelve Labs Pegasus 1.2 (`us.twelvelabs.pegasus-1-2-v1:0`)
   - Anthropic Claude Sonnet (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
 
 ### Enabling Bedrock Model Access
 
-1. Open the [Amazon Bedrock console](https://console.aws.amazon.com/bedrock)
-2. Navigate to **Model access** in the left sidebar
-3. Request access to **Twelve Labs Pegasus 1.2** and **Anthropic Claude Sonnet**
-4. Wait for access to be granted (may take a few minutes)
+In most cases you don't need to do this by hand. As part of `./deploy.sh`, a preflight step **checks whether your account already has access** to the two models the pipeline needs — Twelve Labs Pegasus 1.2 and Anthropic Claude Sonnet — and, if access is missing, **requests it for you automatically** (including the one-time first-use agreement the Anthropic model requires, since both models are offered through AWS Marketplace).
 
-> Twelve Labs Pegasus is offered through AWS Marketplace. If this is the first time your account uses it, you may also need permission to subscribe to the model in Marketplace before invocation succeeds.
+This step is best-effort and safe to re-run. If it can't complete on its own — for example, your credentials lack Marketplace subscribe permissions or your AWS CLI is older than the required version — it prints a warning and lets the deployment continue, so you can grant access manually.
 
 ## Deployment
 
@@ -84,9 +82,11 @@ cd sample-code-for-automated-video-audio-description-using-generative-ai
 The deploy script will:
 
 1. Install Python CDK dependencies
-2. Bootstrap CDK in your account/region
-3. Build the React frontend
-4. Deploy two CloudFormation stacks (Pipeline + Dashboard)
+2. Check (and, if needed, request) Amazon Bedrock model access
+3. Bootstrap CDK in your account/region
+4. Build the FFmpeg Lambda layer
+5. Build the React frontend
+6. Deploy two CloudFormation stacks (Pipeline + Dashboard)
 
 Deployment takes approximately 10-15 minutes.
 
@@ -98,6 +98,9 @@ pip install -r requirements.txt
 
 # Bootstrap CDK (first time only)
 npx cdk bootstrap
+
+# Build the FFmpeg Lambda layer (downloads a static binary; required before deploy)
+bash backend/layers/ffmpeg/build-layer.sh
 
 # Build frontend
 cd dashboard/frontend && npm ci && npm run build && cd ../..
@@ -122,7 +125,7 @@ Open the Dashboard URL (printed in deployment outputs) and sign in with your ema
 
 ### 2. Upload a Video
 
-After deployment, upload an MP4 video to the S3 bucket:
+After deployment, upload an MP4 video to the S3 bucket. You can do so directly from the UI, in the "Process" page by clicking on "Choose MP4 file". Alternatively you can also upload it through AWS CLI commands:
 
 ```bash
 # Get the bucket name from deployment outputs
@@ -139,13 +142,13 @@ aws s3 cp your-video.mp4 s3://$BUCKET_NAME/input/your-video.mp4
 
 The dashboard URL is printed in the deployment outputs. It provides three pages:
 
-- **Viewer** — Browse processed videos, watch them with DVI narration, view per-segment details
-- **Trigger** — Select an input video and start processing
-- **Cost** — View per-execution cost breakdowns across all AWS services used
+- **Process** — Upload an input video and start a pipeline execution (a cost estimate is shown before you confirm)
+- **Viewer** — Browse processed videos, watch them with DVI narration, and inspect per-segment detail
+- **Cost Estimation** — View per-execution cost estimation breakdowns across all AWS services used
 
 ### 4. Trigger the Pipeline
 
-From the Trigger page in the dashboard:
+From the Process page in the dashboard:
 
 1. Select an input video
 2. Click "Trigger Pipeline"
@@ -178,8 +181,8 @@ From the Trigger page in the dashboard:
 │   │   ├── generate_dvi/        # Narration text generation (Claude)
 │   │   ├── synthesize_audio/    # Text-to-speech (Polly)
 │   │   ├── mix_audio_tracks/    # Mix DVI into video (FFmpeg)
-│   │   ├── write_summary_dynamodb/   # Store processing summary
-│   │   └── write_summary_s3/    # Write human-readable summary
+│   │   ├── record_execution_summary/ # Store structured processing summary (DynamoDB)
+│   │   └── generate_summary_report/  # Write human-readable summary report (S3)
 │   └── layers/
 │       └── ffmpeg/              # FFmpeg Lambda layer (static binary via build-layer.sh, no Docker)
 │
@@ -191,25 +194,15 @@ From the Trigger page in the dashboard:
 ## Documentation
 
 - [`backend/LAMBDAS.md`](backend/LAMBDAS.md) — every backend Lambda explained: configuration, key code, and why each design choice was made (including the cost calculator).
-- [`dashboard/frontend/FRONTEND.md`](dashboard/frontend/FRONTEND.md) — a short tour of the React dashboard: structure, the API/auth layers, and the Tailwind v4 + shadcn/ui setup.
+- [`dashboard/frontend/FRONTEND.md`](dashboard/frontend/FRONTEND.md) — a short tour of the web dashboard's React frontend: structure, the API/auth layers, and the Tailwind v4 + shadcn/ui setup.
 
 ## Cost Estimate
 
-Costs depend on video length and number of silence segments. For a typical 5-minute video with 5-8 silence segments:
+The cost of processing a video depends on which AWS services the pipeline uses, how much each one processes (video length, number and length of silence segments, tokens generated, characters synthesized), and the **AWS Region** you deploy to — per-unit prices vary by Region. The pipeline incurs charges across **AWS Lambda**, **AWS Step Functions**, **Amazon Transcribe**, **Amazon Bedrock** (Twelve Labs Pegasus for video understanding and Anthropic Claude for narration text), **Amazon Polly**, **Amazon S3**, and **Amazon DynamoDB**. You can dive deep into the cost estimation logic and implementation in its lambda function definition here [`backend/LAMBDAS.md`](backend/LAMBDAS.md)
 
-| Service             | Estimated Cost  |
-| ------------------- | --------------- |
-| Lambda              | ~$0.01          |
-| Step Functions      | <$0.01          |
-| Transcribe          | ~$0.12          |
-| Bedrock (Pegasus)   | ~$0.05-0.15     |
-| Bedrock (Claude)    | ~$0.01          |
-| Polly               | <$0.01          |
-| S3                  | <$0.01          |
-| DynamoDB            | <$0.01          |
-| **Total per video** | **~$0.15-0.30** |
+The dashboard includes a built-in **Cost Estimation** page that calculates the actual per-execution cost estimate breakdown from each run's own execution history. Here is an example report for a single execution:
 
-The dashboard includes a built-in Cost page that calculates actual per-execution costs.
+![Example DVI Cost Report from the dashboard: a per-service breakdown table covering Step Functions, Lambda, Amazon Transcribe, Amazon Bedrock (Pegasus and Claude), and Amazon Polly, listing usage and USD cost for one succeeded execution.](docs/cost-report-example-dvi.png)
 
 ## Cleanup
 
@@ -230,7 +223,7 @@ npx cdk destroy --all --force
 - **Video file size**: Maximum 8 GB (Lambda ephemeral storage constraint). For larger files, re-encode at a lower bitrate or extend the FFmpeg steps to use ECS Fargate.
 - **Video duration**: Maximum 8 hours (Amazon Transcribe limit). The pipeline validates both size and duration before processing.
 - **Language**: Currently supports English (`en-US`) only for transcription. Modify the `LanguageCode` in `transcribe_video` for other languages.
-- **Silence threshold**: Minimum silence duration is 4 seconds (configurable in `silence_detection/lambda_function.py`). Shorter silences are skipped.
+- **Silence threshold**: Minimum silence duration defaults to 4 seconds and is configurable per pipeline run from the dashboard's Process page (the default lives in `silence_detection/lambda_function.py`). Shorter silences are skipped.
 - **Sequential processing**: Silence segments are analyzed one at a time. For videos with many silence gaps, consider using Step Functions Distributed Map for parallel processing.
 - **Input format**: Only MP4 files are supported. Files must be placed in the `input/` prefix of the S3 bucket.
 
@@ -273,14 +266,11 @@ The minimum silence gap threshold is configurable per pipeline run via the dashb
 
 Set both padding values to `0` to replicate the silence-only approach. Increase them for more narrative context.
 
-### Future Enhancements
-
-- **Narration pace control** — Allow users to set a words-per-second target. Combined with a generate-check-retry loop (generate narration → synthesize → check duration → regenerate shorter if needed), this would eliminate "Exceeds gap" results entirely.
-- **Parallel segment analysis** — Use Step Functions Distributed Map to analyze all silence segments concurrently instead of sequentially, reducing pipeline time for videos with many gaps.
-
 ## Security
 
 The dashboard is protected by Amazon Cognito authentication. All API Gateway endpoints require a valid JWT token. Self-sign-up is disabled — users must be created by an administrator via the AWS CLI or Console.
+
+This is sample code intended for demonstration and learning. It is not production-ready as-is: before deploying it in a production environment, perform a proper security assessment and put reasonable safeguards in place for your use case.
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 

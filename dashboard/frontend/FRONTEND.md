@@ -26,7 +26,9 @@ src/
   and toggles each page with `display: contents | none`. Pages stay mounted, so things
   like the Trigger page's live execution polling keep running when you switch tabs.
   Everything is gated behind an auth check that renders `LoginPage` until a Cognito
-  session exists.
+  session exists. Note: the internal page keys differ from the displayed tab labels in
+  `NavBar.tsx` — `trigger` shows as **"Process"**, `viewer` as **"Viewer"**, and `cost`
+  as **"Cost Estimation"**; `trigger` (Process) is the default landing page.
 - **One API layer (`api.ts`).** Components never call `fetch` directly — they import
   typed functions. Each function calls `authHeaders()` (which throws if unauthenticated),
   checks `res.ok`, and unwraps the relevant field from the JSON envelope. New endpoints
@@ -45,6 +47,9 @@ src/
   when adding tokens.
 - **State.** Local React state + hooks only; no global store. The Trigger page persists
   the active execution ARN to `localStorage` so a page refresh resumes status polling.
+- **Upload.** The Process (Trigger) page includes a `VideoUpload` component that uploads
+  an MP4 straight to the pipeline bucket's `input/` prefix via a presigned PUT URL
+  (`POST /api/trigger/upload`), so users can add source videos without leaving the UI.
 
 ## Build & test
 

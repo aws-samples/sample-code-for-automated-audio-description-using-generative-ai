@@ -1,4 +1,10 @@
-"""Write processing summary to DynamoDB."""
+"""Record a structured, per-execution processing summary in DynamoDB.
+
+Persists aggregate metrics (silence/audio totals, pass/fail counts) and
+per-segment details (start time, DVI text, audio duration, fit check) keyed by
+video_id + execution_id. This is the queryable record the dashboard reads back
+to render the summary bar and the per-segment PASS/FAIL fit badges.
+"""
 import json
 import os
 from datetime import datetime

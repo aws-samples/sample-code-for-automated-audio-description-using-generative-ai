@@ -3,7 +3,7 @@
 Creates:
 - S3 bucket for video storage and processing artifacts
 - DynamoDB table for processing summaries
-- FFmpeg Lambda layer (built via Docker)
+- FFmpeg Lambda layer (static binary via build-layer.sh, no Docker)
 - All pipeline Lambda functions
 - Step Functions state machine
 """
@@ -189,13 +189,13 @@ class PipelineStack(Stack):
             ffmpeg=True, memory=3008, timeout=900, ephemeral_storage=10240,
         )
 
-        self.write_summary_dynamodb_fn = self._create_lambda(
-            "WriteSummaryDynamoDB", "write_summary_dynamodb", lambda_role,
+        self.record_execution_summary_fn = self._create_lambda(
+            "RecordExecutionSummary", "record_execution_summary", lambda_role,
             {**common_env, "TABLE_NAME": self.table.table_name},
         )
 
-        self.write_summary_s3_fn = self._create_lambda(
-            "WriteSummaryS3", "write_summary_s3", lambda_role, common_env,
+        self.generate_summary_report_fn = self._create_lambda(
+            "GenerateSummaryReport", "generate_summary_report", lambda_role, common_env,
         )
 
         # ======================== STEP FUNCTIONS ========================
@@ -214,8 +214,8 @@ class PipelineStack(Stack):
             self.generate_dvi_fn.function_arn,
             self.synthesize_audio_fn.function_arn,
             self.mix_audio_tracks_fn.function_arn,
-            self.write_summary_dynamodb_fn.function_arn,
-            self.write_summary_s3_fn.function_arn,
+            self.record_execution_summary_fn.function_arn,
+            self.generate_summary_report_fn.function_arn,
         ]
         sf_role.add_to_policy(
             iam.PolicyStatement(
@@ -289,8 +289,8 @@ class PipelineStack(Stack):
         generate_dvi = invoke_step("GenerateDVI", self.generate_dvi_fn)
         synthesize_audio = invoke_step("SynthesizeAudio", self.synthesize_audio_fn)
         mix_audio = invoke_step("MixAudioTracks", self.mix_audio_tracks_fn)
-        write_db = invoke_step("WriteSummaryDB", self.write_summary_dynamodb_fn)
-        write_s3 = invoke_step("WriteSummaryS3", self.write_summary_s3_fn)
+        record_summary = invoke_step("RecordExecutionSummary", self.record_execution_summary_fn)
+        generate_report = invoke_step("GenerateSummaryReport", self.generate_summary_report_fn)
 
         # Chain the post-transcribe steps
         post_transcribe = (
@@ -300,8 +300,8 @@ class PipelineStack(Stack):
             .next(generate_dvi)
             .next(synthesize_audio)
             .next(mix_audio)
-            .next(write_db)
-            .next(write_s3)
+            .next(record_summary)
+            .next(generate_report)
         )
 
         # Transcribe polling loop

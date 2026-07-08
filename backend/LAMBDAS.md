@@ -37,8 +37,8 @@ The state machine (`dvi-narration-pipeline`) runs these steps in order:
 | 6   | GenerateDVI            | `generate_dvi`             | 512 MB  | 300 s   | Bedrock (Claude)          |
 | 7   | SynthesizeAudio        | `synthesize_audio`         | 512 MB  | 300 s   | `mutagen` (pip-installed) |
 | 8   | MixAudioTracks         | `mix_audio_tracks`         | 3008 MB | 900 s   | FFmpeg, 10 GB ephemeral   |
-| 9   | WriteSummaryDB         | `write_summary_dynamodb`   | 512 MB  | 300 s   | —                         |
-| 10  | WriteSummaryS3         | `write_summary_s3`         | 512 MB  | 300 s   | —                         |
+| 9   | RecordExecutionSummary | `record_execution_summary` | 512 MB  | 300 s   | —                         |
+| 10  | GenerateSummaryReport  | `generate_summary_report`  | 512 MB  | 300 s   | —                         |
 
 > Memory/timeout defaults are 512 MB / 300 s. Only steps that deviate are configured
 > explicitly — see each section for the reasoning.
@@ -111,7 +111,7 @@ directly aligned with the goal: we want to narrate _when no one is speaking_.
 
 A gap qualifies as a usable silence when it's at least `min_silence_duration` seconds.
 That threshold comes from the Step Function execution input
-(`event["min_silence_duration"]`, which the dashboard's Trigger page exposes) and falls
+(`event["min_silence_duration"]`, which the dashboard's Process page exposes) and falls
 back to `DEFAULT_MIN_SILENCE_DURATION = 4.0` when not supplied — short enough to be
 common, long enough to fit a useful spoken description.
 
@@ -205,13 +205,12 @@ Clips below `MIN_SEGMENT_DURATION = 1.0` s are skipped with a placeholder rather
 to the model. Per-segment errors are caught and recorded so one bad clip doesn't fail the
 whole run.
 
-**Cost reporting (additive).** The step now emits an additive `cost_metadata` block in
+**Cost reporting.** The step now emits an additive `cost_metadata` block in
 its return value for the cost dashboard:
 `{"pegasus_video_seconds": <sum of analyzed clip durations>, "bedrock_input_tokens": <sum>, "bedrock_output_tokens": <sum>}`.
 Pegasus **input is billed per second of video** (not per token), so `pegasus_video_seconds`
 — summed over the segments actually submitted (too-short skipped segments contribute 0) —
-is the billable input quantity; output is billed per token. This is purely additive: it
-does not change the `segment-analyses.json` artifact or any other return field.
+is the billable input quantity; output is billed per token.
 
 ## 6. `generate_dvi` — turn analysis into narration (Claude)
 
@@ -248,8 +247,7 @@ FCC / CRTC / WCAG 2.1 SC 1.2.5:
 
 **Complementary guidance (applied only when it fits).** A second block
 (`COMPLEMENTARY_GUIDANCE`, a module-level constant) refines the core rules with
-craft-level conventions paraphrased from widely used industry AD style guidance (the same
-principles appear in broadcaster/streamer style guides and ACB/ADP and Ofcom guidance):
+craft-level conventions paraphrased from widely used industry AD style guidance:
 
 - **Accuracy over detail** — if the analysis doesn't clearly establish something, use a
   general term instead of guessing ("herbs," not a specific herb) and never invent details
@@ -279,17 +277,12 @@ most essential information is covered"), so the word budget and prioritization a
 when space is tight. The guidance is **paraphrased in our own words**, not copied from any
 single proprietary style guide, so the sample stays freely distributable.
 
-**Not yet covered (would need pipeline changes).** Cross-segment consistency (a shared
-character/location glossary, naming a character once introduced and staying consistent
-across segments) can't be honored by this stateless, per-segment step — it would require
-passing video-level context between segments. See the README "Full-Video Context" note.
-
 `temperature=0.3` and `max_tokens=200` keep output tight and consistent.
 
-**Cost reporting (additive).** The step now emits an additive `cost_metadata` block
+**Cost reporting.** The step now emits an additive `cost_metadata` block
 `{"bedrock_input_tokens": <sum>, "bedrock_output_tokens": <sum>}`, summed from each Claude
 invocation's `result["usage"]` (errored invocations contribute 0), and consumed by the
-cost dashboard. Additive only — no change to `dvi-segments.json`.
+cost dashboard.
 
 ## 7. `synthesize_audio` — text to speech (Polly)
 
@@ -307,10 +300,10 @@ function reads the MP3 with `mutagen` to get the true length and records it in
 `mutagen` is pure Python, so the stack installs it directly into the function directory at
 synth time (`pip_install=True`) rather than building a layer.
 
-**Cost reporting (additive).** The step now emits an additive `cost_metadata` block
+**Cost reporting.** The step now emits an additive `cost_metadata` block
 `{"polly_characters": <sum>}` — billed characters equal the sum of `len(dvi_text)` across
 segments (synthesis uses `TextType="text"`, optionally cross-checked against the
-`x-amzn-RequestCharacters` response header). Additive only.
+`x-amzn-RequestCharacters` response header)
 
 ## 8. `mix_audio_tracks` — overlay narration onto the video (FFmpeg)
 
@@ -337,28 +330,36 @@ and the narration clearly audible. The video stream is copied (`-c:v copy`) — 
 re-encoded — so mixing is fast and lossless for the picture. If there's no narration at
 all, the original is copied through unchanged.
 
-## 9. `write_summary_dynamodb` — structured record + fit check
+## 9. `record_execution_summary` — structured record + fit check
 
 **Config:** 512 MB, 300 s. Env: `TABLE_NAME`.
 **Reads:** `silences.json`, `dvi-segments.json`, `audio-metadata.json`.
 **Writes:** one item to DynamoDB (keys `video_id` + `execution_id`).
 
-Persists a structured per-execution summary. Floats are converted to `Decimal` because
-DynamoDB rejects native floats. **Key detail — the PASS/FAIL fit check:** for each
-segment it compares the actual synthesized audio duration against the silence duration and
-flags `FAIL` when narration is longer than the gap, then totals passed/failed segments.
-This is the pipeline's built-in quality signal for "did the narration actually fit?".
+**Purpose:** record a structured, machine-readable summary of the run that the application
+can query back. This is the data source the dashboard reads to render the summary bar and
+the per-segment PASS/FAIL fit badges — so it stores aggregate metrics (total silence
+segments, total silence/audio duration, segments passed/failed) alongside per-segment
+details (index, start time, DVI text, audio duration, fit result). Floats are converted to
+`Decimal` because DynamoDB rejects native floats. **Key detail — the PASS/FAIL fit check:**
+for each segment it compares the actual synthesized audio duration against the silence
+duration and flags `FAIL` when narration is longer than the gap, then totals passed/failed
+segments. This is the pipeline's built-in quality signal for "did the narration actually
+fit?". Named for what it does (records the execution summary), not where it stores it.
 
-## 10. `write_summary_s3` — human-readable summary
+## 10. `generate_summary_report` — human-readable report
 
 **Config:** 512 MB, 300 s.
 **Reads:** `dvi/{video_id}/dvi-segments.json`.
 **Writes:** `summaries/{video_id}-summary-{shortid}.txt`.
 
-Writes a plain-text report (timestamps formatted `HH:MM:SS.mmm`, each segment's silence
-window and narration text) for quick human review without querying DynamoDB or parsing
-JSON. The summary-building logic is split into a pure `build_summary_text()` function,
-which makes it straightforward to unit-test.
+**Purpose:** generate a human-readable report of the run for people to read or download —
+as opposed to the structured DynamoDB record above. It renders a plain-text report
+(timestamps formatted `HH:MM:SS.mmm`, each segment's silence window and narration text) so
+a reviewer can scan what was produced without querying DynamoDB or parsing JSON. The
+report-building logic is split into a pure `build_summary_text()` function, which makes it
+straightforward to unit-test. Named for what it produces (a summary report), not where it
+stores it.
 
 ---
 
@@ -407,11 +408,3 @@ execution time, and waiting for Cost Explorer would make the dashboard's cost pa
 for "what did this run just cost me?". The metadata-first / estimate-fallback design gives
 an immediate, reasonably accurate number that gets more precise as steps emit
 `cost_metadata`.
-
-> **Maintenance note:** the in-scope deployed states (`ValidateInput`, `AnalyzeSegments`,
-> `GenerateDVI`, `SynthesizeAudio`) are now correctly mapped to the deployed `invoke_step`
-> result-path convention, so `cost_metadata` is read from the right payload for each. The
-> legacy `V1/V2/V3` state-to-function maps remain only for backward compatibility with
-> older executions recorded under the earlier multi-pipeline layout; they're harmless for
-> current runs and the estimator still falls back to duration-based estimates for any state
-> it can't map.
