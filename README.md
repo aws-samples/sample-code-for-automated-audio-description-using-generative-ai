@@ -1,4 +1,4 @@
-# Automated Video Audio Description Using Generative AI
+# Automated Audio Description Using Generative AI
 
 A serverless pipeline that automatically generates **Descriptive Video Information (DVI)** — spoken narrations of visual content inserted during silence gaps in videos — to improve media accessibility for visually impaired audiences.
 
